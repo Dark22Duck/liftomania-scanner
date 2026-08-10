@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07111d">
+<title>LIFTOMANIA — Scanner</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#07111d;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body{padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+.wrap{max-width:520px;margin:0 auto;padding:20px 0 40px}
+.brand{font-weight:900;letter-spacing:3px;font-size:13px;color:#73e4b3;margin-top:8px}
+h1{font-size:40px;margin:10px 0 5px;letter-spacing:-1px}
+.sub{color:#98a7ba;margin-bottom:22px}
+.panel{background:#112033;border:1px solid #ffffff12;border-radius:26px;padding:15px;box-shadow:0 24px 70px #0008}
+#reader{overflow:hidden;border-radius:20px;background:#000;min-height:320px}
+.start{width:100%;border:0;border-radius:17px;padding:18px;margin-top:14px;background:#66e0ae;color:#07111d;font-size:18px;font-weight:950}
+.stop{background:#24364b;color:#fff}
+.note{font-size:12px;color:#8595a9;text-align:center;margin-top:13px;line-height:1.5}
+.manual{display:flex;gap:8px;margin-top:15px}
+.manual input{min-width:0;flex:1;padding:15px;border:0;border-radius:14px;font-size:16px}
+.manual button{border:0;border-radius:14px;padding:0 16px;background:#fff;font-weight:900}
+.state{margin-top:14px;padding:13px;border-radius:14px;background:#17283d;color:#b8c6d6;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">LIFT × KEDR</div>
+  <h1>CHECK-IN</h1>
+  <div class="sub">Наведи камеру на QR гостя</div>
+
+  <div class="panel">
+    <div id="reader"></div>
+    <button id="startBtn" class="start" onclick="startScanner()">СКАНИРОВАТЬ QR</button>
+    <button id="stopBtn" class="start stop" style="display:none" onclick="stopScanner()">ОСТАНОВИТЬ КАМЕРУ</button>
+    <div id="state" class="state"></div>
+
+    <div class="manual">
+      <input id="manual" placeholder="LFT-005 или ссылка">
+      <button onclick="manualGo()">ОК</button>
+    </div>
+    <div class="note">После скана откроется карточка проверки в нашей системе. Там нажми «ПРОПУСТИТЬ».</div>
+  </div>
+</div>
+
+<script>
+const CHECKIN = 'https://script.google.com/macros/s/AKfycbwnTbUMeCjDMjUAU1DuPCrKBaVk4tblS7ubyammm4ycy1D2Rw7XGYbe6mqBjnJIk3IKmg/exec?page=checkin&key=32eeed8d989e4e15bf';
+let scanner = null;
+let busy = false;
+
+function setState(text){
+  const s=document.getElementById('state');
+  s.textContent=text; s.style.display='block';
+}
+
+function goToCheckin(value){
+  if(busy) return;
+  busy=true;
+  setState('QR найден. Открываю билет…');
+  const url = CHECKIN + '&scan=' + encodeURIComponent(value);
+  window.location.href = url;
+}
+
+async function startScanner(){
+  if(scanner) return;
+  busy=false;
+  document.getElementById('startBtn').style.display='none';
+  document.getElementById('stopBtn').style.display='block';
+  setState('Запрашиваю доступ к камере…');
+
+  scanner = new Html5Qrcode('reader');
+  try {
+    await scanner.start(
+      { facingMode: "environment" },
+      { fps: 12, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
+      decodedText => goToCheckin(decodedText),
+      () => {}
+    );
+    setState('Камера включена. Наведи на QR.');
+  } catch(e) {
+    setState('Не удалось открыть камеру: ' + (e && e.message ? e.message : e));
+    document.getElementById('startBtn').style.display='block';
+    document.getElementById('stopBtn').style.display='none';
+    scanner=null;
+  }
+}
+
+async function stopScanner(){
+  if(!scanner) return;
+  try { await scanner.stop(); } catch(e) {}
+  try { scanner.clear(); } catch(e) {}
+  scanner=null; busy=false;
+  document.getElementById('startBtn').style.display='block';
+  document.getElementById('stopBtn').style.display='none';
+  setState('Камера остановлена.');
+}
+
+function manualGo(){
+  const v=document.getElementById('manual').value.trim();
+  if(v) goToCheckin(v);
+}
+</script>
+</body>
+</html>
