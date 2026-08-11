@@ -23,34 +23,56 @@
       <div id="resultCode" class="code"></div>
       <p class="hint">Вернись в CHECK-IN и вставь этот код вручную.</p>
       <button id="copyButton" class="button" type="button">СКОПИРОВАТЬ</button>
-      <button id="closeButton" class="button secondary" type="button">ВЕРНУТЬСЯ В CHECK-IN</button>
+      <button id="returnButton" class="button secondary" type="button">ВЕРНУТЬСЯ В CHECK-IN</button>
     </section>
   </main>
   <script>
-  (() => {
+  window.LiftomaniaScannerSecurity = (() => {
     'use strict';
-    const RESULT_TYPE = 'LIFTOMANIA_QR_RESULT';
-    const ACK_TYPE = 'LIFTOMANIA_QR_ACK';
     const CODE_PATTERN = /^LFT-\d{3,}$/;
-    const byId = id => document.getElementById(id);
-    const returnOrigin = parseReturnOrigin();
-    let scanner = null;
-    let deliveredCode = '';
-    let ackTimer = null;
-
-    function parseReturnOrigin() {
-      const value = new URLSearchParams(window.location.search).get('returnOrigin') || '';
-      try {
-        const parsed = new URL(value);
-        const googleHost = parsed.hostname === 'script.google.com' || parsed.hostname.endsWith('.googleusercontent.com');
-        return parsed.protocol === 'https:' && parsed.origin === value && googleHost ? parsed.origin : '';
-      } catch (error) { return ''; }
-    }
+    const RESUME_PATTERN = /^[a-f0-9]{64}$/i;
+    const APPS_SCRIPT_PATH = /^\/macros\/s\/[A-Za-z0-9_-]+\/(?:exec|dev)$/;
 
     function normalizeTicketCode(value) {
       const code = String(value || '').trim().toUpperCase();
       return CODE_PATTERN.test(code) ? code : null;
     }
+
+    function parseSafeReturnUrl(value) {
+      try {
+        const parsed = new URL(String(value || ''));
+        const keys = Array.from(parsed.searchParams.keys());
+        const allowedKeys = keys.every(key => key === 'page' || key === 'resume');
+        if (parsed.protocol !== 'https:' || parsed.hostname !== 'script.google.com' || parsed.port) return null;
+        if (parsed.username || parsed.password || parsed.hash || !APPS_SCRIPT_PATH.test(parsed.pathname)) return null;
+        if (!allowedKeys || keys.length !== 2) return null;
+        if (parsed.searchParams.getAll('page').length !== 1 || parsed.searchParams.getAll('resume').length !== 1) return null;
+        if (parsed.searchParams.get('page') !== 'checkin') return null;
+        if (!RESUME_PATTERN.test(parsed.searchParams.get('resume') || '')) return null;
+        return parsed;
+      } catch (error) { return null; }
+    }
+
+    function buildReturnUrl(value, ticketCode) {
+      const parsed = parseSafeReturnUrl(value);
+      const code = normalizeTicketCode(ticketCode);
+      if (!parsed || !code) return null;
+      parsed.searchParams.set('scan', code);
+      return parsed.toString();
+    }
+
+    return Object.freeze({CODE_PATTERN, normalizeTicketCode, parseSafeReturnUrl, buildReturnUrl});
+  })();
+  </script>
+  <script>
+  (() => {
+    'use strict';
+    const security = window.LiftomaniaScannerSecurity;
+    const byId = id => document.getElementById(id);
+    const rawReturnUrl = new URLSearchParams(window.location.search).get('return') || '';
+    const safeReturnUrl = security.parseSafeReturnUrl(rawReturnUrl);
+    let scanner = null;
+    let scannedCode = '';
 
     function setMessage(type, text) {
       const node = byId('message');
@@ -67,41 +89,46 @@
     }
 
     function showFallback(code, text) {
-      deliveredCode = code;
+      scannedCode = code;
       byId('resultCode').textContent = code;
       byId('fallback').classList.add('show');
       setMessage('error', text);
     }
 
-    function deliver(code) {
-      deliveredCode = code;
-      if (!window.opener || window.opener.closed || !returnOrigin) {
-        showFallback(code, 'Автоматический возврат недоступен.');
+    function redirectToCheckin(code) {
+      const destination = security.buildReturnUrl(rawReturnUrl, code);
+      if (!destination) {
+        showFallback(code, 'Безопасный адрес возврата недоступен.');
         return;
       }
-      window.opener.postMessage({type:RESULT_TYPE,ticketCode:code}, returnOrigin);
+      scannedCode = code;
       setMessage('ok', 'Код считан. Возвращаю в CHECK-IN…');
-      ackTimer = window.setTimeout(function () {
-        showFallback(code, 'CHECK-IN не подтвердил получение кода.');
-      }, 1800);
+      try {
+        window.setTimeout(function () {
+          showFallback(code, 'Автоматический возврат не сработал.');
+        }, 1800);
+        window.location.replace(destination);
+      } catch (error) {
+        showFallback(code, 'Автоматический возврат не сработал.');
+      }
     }
 
     async function onScan(decodedText) {
-      const code = normalizeTicketCode(decodedText);
+      const code = security.normalizeTicketCode(decodedText);
       if (!code) {
         setMessage('error', 'QR отклонён: ожидается только LFT-XXX.');
         return;
       }
       byId('startButton').disabled = true;
       await stopScanner();
-      deliver(code);
+      redirectToCheckin(code);
     }
 
     async function start() {
       try {
         if (typeof Html5Qrcode !== 'function') throw new Error('Scanner library не загрузилась');
+        if (!safeReturnUrl) setMessage('error', 'Адрес автоматического возврата не прошёл проверку.');
         byId('fallback').classList.remove('show');
-        setMessage('ok', 'Запрашиваю доступ к камере…');
         scanner = new Html5Qrcode('reader');
         await scanner.start(
           {facingMode:'environment'},
@@ -119,32 +146,29 @@
     }
 
     async function copyCode() {
-      if (!deliveredCode) return;
+      if (!scannedCode) return;
       try {
-        await navigator.clipboard.writeText(deliveredCode);
-        setMessage('ok', 'Код скопирован: ' + deliveredCode);
+        await navigator.clipboard.writeText(scannedCode);
+        setMessage('ok', 'Код скопирован: ' + scannedCode);
       } catch (error) {
         const field = document.createElement('textarea');
-        field.value = deliveredCode;
+        field.value = scannedCode;
         field.setAttribute('readonly', '');
         document.body.appendChild(field);
         field.select();
         document.execCommand('copy');
         field.remove();
-        setMessage('ok', 'Код скопирован: ' + deliveredCode);
+        setMessage('ok', 'Код скопирован: ' + scannedCode);
       }
     }
 
-    window.addEventListener('message', function (event) {
-      if (!returnOrigin || event.origin !== returnOrigin || event.source !== window.opener) return;
-      const data = event.data;
-      if (!data || data.type !== ACK_TYPE || normalizeTicketCode(data.ticketCode) !== deliveredCode) return;
-      if (ackTimer) window.clearTimeout(ackTimer);
-      window.close();
-    });
     byId('startButton').addEventListener('click', start);
     byId('copyButton').addEventListener('click', copyCode);
-    byId('closeButton').addEventListener('click', function () { window.close(); });
+    byId('returnButton').addEventListener('click', function () {
+      const destination = security.buildReturnUrl(rawReturnUrl, scannedCode);
+      if (destination) window.location.replace(destination);
+      else window.history.back();
+    });
   })();
   </script>
 </body>
