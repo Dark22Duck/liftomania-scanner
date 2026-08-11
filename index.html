@@ -6,8 +6,40 @@
   <meta name="referrer" content="no-referrer">
   <title>LIFTOMANIA QR Scanner</title>
   <style>
-    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:#07111d;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(520px,100%);margin:auto}.eyebrow{color:#70e6b2;font-size:11px;font-weight:900;letter-spacing:.18em}h1{margin:8px 0 18px;font-size:34px}.panel{padding:18px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#101e2f}.button{width:100%;border:0;border-radius:14px;padding:16px;background:#70e6b2;color:#082018;font:900 16px inherit}.button:disabled{opacity:.55}.secondary{margin-top:10px;background:#24364b;color:#fff}.reader{margin-top:14px;border-radius:16px;overflow:hidden;background:#000}.message{display:none;margin-top:14px;padding:13px;border-radius:13px;line-height:1.4}.message.show{display:block}.ok{background:#dff8e8;color:#126b37}.error{background:#ffe1e5;color:#982032}.fallback{display:none;margin-top:18px;padding:20px;border-radius:20px;background:#f8fafc;color:#0f172a;text-align:center}.fallback.show{display:block}.code{font-size:38px;font-weight:950;letter-spacing:.1em;overflow-wrap:anywhere}.hint{margin:8px 0 16px;color:#64748b;font-size:13px}#reader video{border-radius:12px}
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:#07111d;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(520px,100%);margin:auto}.eyebrow{color:#70e6b2;font-size:11px;font-weight:900;letter-spacing:.18em}h1{margin:8px 0 18px;font-size:34px}.panel{padding:18px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#101e2f}.button{width:100%;border:0;border-radius:14px;padding:16px;background:#70e6b2;color:#082018;font:900 16px inherit}.button:disabled{opacity:.55}.secondary{margin-top:10px;background:#24364b;color:#fff}.reader{margin-top:14px;border-radius:16px;overflow:hidden;background:#000}.message{display:none;margin-top:14px;padding:13px;border-radius:13px;line-height:1.4}.message.show{display:block}.ok{background:#dff8e8;color:#126b37}.error{background:#ffe1e5;color:#982032}.fallback{display:none;margin-top:18px;padding:20px;border-radius:20px;background:#f8fafc;color:#0f172a;text-align:center}.fallback.show{display:block}.code{font-size:38px;font-weight:950;letter-spacing:.1em;overflow-wrap:anywhere}.hint{margin:8px 0 16px;color:#64748b;font-size:13px}.diagnostics{margin-top:14px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#b9c9dc}.diagnostics strong{color:#fff}.diagnostics div{overflow-wrap:anywhere}#reader video{border-radius:12px}
   </style>
+  <script>
+  (() => {
+    'use strict';
+    const state = {
+      returnPresent:'UNKNOWN', returnValidation:'UNKNOWN', redirectAttempted:'NO',
+      redirectError:'NONE', runtimeError:'NONE'
+    };
+    const ids = {
+      returnPresent:'diagReturnPresent', returnValidation:'diagReturnValidation',
+      redirectAttempted:'diagRedirectAttempted', redirectError:'diagRedirectError',
+      runtimeError:'diagRuntimeError'
+    };
+    function sanitizeError(value) {
+      const source = value && value.message ? value.message : String(value || 'UNKNOWN');
+      return source
+        .replace(/https?:\/\/\S+/gi, '[URL]')
+        .replace(/resume(?:=|%3D)[^&\s]+/gi, 'resume=[REDACTED]')
+        .replace(/[a-f0-9]{64}/gi, '[REDACTED]')
+        .slice(0, 180);
+    }
+    function render(name) {
+      const node = document.getElementById(ids[name]);
+      if (node) node.textContent = state[name];
+    }
+    function set(name, value) { state[name] = String(value); render(name); }
+    function capture(error) { set('runtimeError', sanitizeError(error)); }
+    window.LiftomaniaScannerDiagnostics = Object.freeze({set, capture, snapshot:() => Object.assign({}, state)});
+    window.addEventListener('error', event => capture(event.error || event.message || 'SCRIPT_ERROR'));
+    window.addEventListener('unhandledrejection', event => capture(event.reason || 'UNHANDLED_REJECTION'));
+    document.addEventListener('DOMContentLoaded', () => Object.keys(state).forEach(render));
+  })();
+  </script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
@@ -25,6 +57,13 @@
       <button id="copyButton" class="button" type="button">СКОПИРОВАТЬ</button>
       <button id="returnButton" class="button secondary" type="button">ВЕРНУТЬСЯ В CHECK-IN</button>
     </section>
+    <section class="panel diagnostics" aria-label="Безопасная диагностика scanner">
+      <div>return parameter present: <strong id="diagReturnPresent">UNKNOWN</strong></div>
+      <div>return URL validation: <strong id="diagReturnValidation">UNKNOWN</strong></div>
+      <div>redirect attempted: <strong id="diagRedirectAttempted">NO</strong></div>
+      <div>redirect error: <strong id="diagRedirectError">NONE</strong></div>
+      <div>JS runtime error: <strong id="diagRuntimeError">NONE</strong></div>
+    </section>
   </main>
   <script>
   window.LiftomaniaScannerSecurity = (() => {
@@ -38,41 +77,70 @@
       return CODE_PATTERN.test(code) ? code : null;
     }
 
+    function readQueryParameter(search, expectedName) {
+      try {
+        const query = String(search || '').replace(/^\?/, '');
+        if (!query) return '';
+        const parts = query.split('&');
+        for (let index = 0; index < parts.length; index += 1) {
+          const separator = parts[index].indexOf('=');
+          const rawName = separator === -1 ? parts[index] : parts[index].slice(0, separator);
+          if (decodeURIComponent(rawName.replace(/\+/g, ' ')) !== expectedName) continue;
+          const rawValue = separator === -1 ? '' : parts[index].slice(separator + 1);
+          return decodeURIComponent(rawValue.replace(/\+/g, ' '));
+        }
+        return '';
+      } catch (error) { return ''; }
+    }
+
     function parseSafeReturnUrl(value) {
       try {
         const parsed = new URL(String(value || ''));
-        const keys = Array.from(parsed.searchParams.keys());
-        const allowedKeys = keys.every(key => key === 'page' || key === 'resume');
         if (parsed.protocol !== 'https:' || parsed.hostname !== 'script.google.com' || parsed.port) return null;
         if (parsed.username || parsed.password || parsed.hash || !APPS_SCRIPT_PATH.test(parsed.pathname)) return null;
-        if (!allowedKeys || keys.length !== 2) return null;
-        if (parsed.searchParams.getAll('page').length !== 1 || parsed.searchParams.getAll('resume').length !== 1) return null;
-        if (parsed.searchParams.get('page') !== 'checkin') return null;
-        if (!RESUME_PATTERN.test(parsed.searchParams.get('resume') || '')) return null;
+        const entries = parsed.search.replace(/^\?/, '').split('&');
+        if (entries.length !== 2) return null;
+        const parameters = Object.create(null);
+        for (let index = 0; index < entries.length; index += 1) {
+          const separator = entries[index].indexOf('=');
+          if (separator < 1) return null;
+          const name = decodeURIComponent(entries[index].slice(0, separator).replace(/\+/g, ' '));
+          const parameterValue = decodeURIComponent(entries[index].slice(separator + 1).replace(/\+/g, ' '));
+          if ((name !== 'page' && name !== 'resume') || Object.prototype.hasOwnProperty.call(parameters, name)) return null;
+          parameters[name] = parameterValue;
+        }
+        if (parameters.page !== 'checkin' || !RESUME_PATTERN.test(parameters.resume || '')) return null;
         return parsed;
       } catch (error) { return null; }
     }
 
-    function buildReturnUrl(value, ticketCode) {
-      const parsed = parseSafeReturnUrl(value);
+    function buildValidatedReturnUrl(parsed, ticketCode) {
       const code = normalizeTicketCode(ticketCode);
       if (!parsed || !code) return null;
-      parsed.searchParams.set('scan', code);
-      return parsed.toString();
+      return parsed.toString() + '&scan=' + encodeURIComponent(code);
     }
 
-    return Object.freeze({CODE_PATTERN, normalizeTicketCode, parseSafeReturnUrl, buildReturnUrl});
+    function buildReturnUrl(value, ticketCode) {
+      const parsed = parseSafeReturnUrl(value);
+      return buildValidatedReturnUrl(parsed, ticketCode);
+    }
+
+    return Object.freeze({CODE_PATTERN, normalizeTicketCode, readQueryParameter, parseSafeReturnUrl, buildValidatedReturnUrl, buildReturnUrl});
   })();
   </script>
   <script>
   (() => {
     'use strict';
     const security = window.LiftomaniaScannerSecurity;
+    const diagnostics = window.LiftomaniaScannerDiagnostics;
     const byId = id => document.getElementById(id);
-    const rawReturnUrl = new URLSearchParams(window.location.search).get('return') || '';
+    const rawReturnUrl = security.readQueryParameter(window.location.search, 'return');
     const safeReturnUrl = security.parseSafeReturnUrl(rawReturnUrl);
+    diagnostics.set('returnPresent', rawReturnUrl ? 'YES' : 'NO');
+    diagnostics.set('returnValidation', safeReturnUrl ? 'VALID' : 'REJECTED');
     let scanner = null;
     let scannedCode = '';
+    let redirectFallbackTimer = null;
 
     function setMessage(type, text) {
       const node = byId('message');
@@ -95,33 +163,41 @@
       setMessage('error', text);
     }
 
-    function redirectToCheckin(code) {
-      const destination = security.buildReturnUrl(rawReturnUrl, code);
+    function redirectToCheckin(code, navigationMethod) {
+      const destination = security.buildValidatedReturnUrl(safeReturnUrl, code);
       if (!destination) {
-        showFallback(code, 'Безопасный адрес возврата недоступен.');
-        return;
+        diagnostics.set('redirectError', safeReturnUrl ? 'INVALID_TICKET_CODE' : 'RETURN_URL_REJECTED');
+        showFallback(code, safeReturnUrl ? 'Некорректный код для возврата.' : 'Return URL отсутствует или отклонён проверкой безопасности.');
+        return false;
       }
       scannedCode = code;
+      diagnostics.set('redirectAttempted', 'YES');
+      diagnostics.set('redirectError', 'NONE');
       setMessage('ok', 'Код считан. Возвращаю в CHECK-IN…');
       try {
-        window.setTimeout(function () {
-          showFallback(code, 'Автоматический возврат не сработал.');
-        }, 1800);
-        window.location.replace(destination);
+        if (redirectFallbackTimer) window.clearTimeout(redirectFallbackTimer);
+        if (navigationMethod === 'assign') window.location.assign(destination);
+        else window.location.replace(destination);
+        return true;
       } catch (error) {
-        showFallback(code, 'Автоматический возврат не сработал.');
+        diagnostics.set('redirectError', diagnostics.snapshot().runtimeError === 'NONE' ? 'NAVIGATION_EXCEPTION' : diagnostics.snapshot().runtimeError);
+        showFallback(code, 'Safari отклонил переход. Используй кнопку возврата ещё раз.');
+        return false;
       }
     }
 
-    async function onScan(decodedText) {
+    function onScan(decodedText) {
       const code = security.normalizeTicketCode(decodedText);
       if (!code) {
         setMessage('error', 'QR отклонён: ожидается только LFT-XXX.');
         return;
       }
       byId('startButton').disabled = true;
-      await stopScanner();
-      redirectToCheckin(code);
+      redirectToCheckin(code, 'replace');
+      redirectFallbackTimer = window.setTimeout(function () {
+        showFallback(code, 'Автоматический возврат не завершился. Нажми «ВЕРНУТЬСЯ В CHECK-IN».');
+      }, 2500);
+      stopScanner().catch(diagnostics.capture);
     }
 
     async function start() {
@@ -165,10 +241,14 @@
     byId('startButton').addEventListener('click', start);
     byId('copyButton').addEventListener('click', copyCode);
     byId('returnButton').addEventListener('click', function () {
-      const destination = security.buildReturnUrl(rawReturnUrl, scannedCode);
-      if (destination) window.location.replace(destination);
-      else window.history.back();
+      if (!scannedCode) {
+        diagnostics.set('redirectError', 'NO_SCANNED_CODE');
+        setMessage('error', 'Сначала отсканируй QR или скопируй код вручную.');
+        return;
+      }
+      redirectToCheckin(scannedCode, 'assign');
     });
+    window.LiftomaniaScannerApp = Object.freeze({handleDecodedText:onScan});
   })();
   </script>
 </body>
