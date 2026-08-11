@@ -1,32 +1,151 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07111d">
-<title>LIFTOMANIA — Scanner</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<style>
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#07111d;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}body{padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}.wrap{max-width:520px;margin:0 auto;padding:20px 0 40px}.brand{font-weight:900;letter-spacing:3px;font-size:13px;color:#73e4b3;margin-top:8px}h1{font-size:40px;margin:10px 0 5px;letter-spacing:-1px}.sub{color:#98a7ba;margin-bottom:22px}.panel{background:#112033;border:1px solid #ffffff12;border-radius:26px;padding:15px;box-shadow:0 24px 70px #0008}#reader{overflow:hidden;border-radius:20px;background:#000;min-height:320px}.start{width:100%;border:0;border-radius:17px;padding:18px;margin-top:14px;background:#66e0ae;color:#07111d;font-size:18px;font-weight:950}.stop{background:#24364b;color:#fff}.note{font-size:12px;color:#8595a9;text-align:center;margin-top:13px;line-height:1.5}.manual{display:flex;gap:8px;margin-top:15px}.manual input{min-width:0;flex:1;padding:15px;border:0;border-radius:14px;font-size:16px}.manual button{border:0;border-radius:14px;padding:0 16px;background:#fff;font-weight:900}.state{margin-top:14px;padding:13px;border-radius:14px;background:#17283d;color:#b8c6d6;display:none}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>LIFTOMANIA QR Scanner</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:#07111d;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(520px,100%);margin:auto}.eyebrow{color:#70e6b2;font-size:11px;font-weight:900;letter-spacing:.18em}h1{margin:8px 0 18px;font-size:34px}.panel{padding:18px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#101e2f}.button{width:100%;border:0;border-radius:14px;padding:16px;background:#70e6b2;color:#082018;font:900 16px inherit}.button:disabled{opacity:.55}.secondary{margin-top:10px;background:#24364b;color:#fff}.reader{margin-top:14px;border-radius:16px;overflow:hidden;background:#000}.message{display:none;margin-top:14px;padding:13px;border-radius:13px;line-height:1.4}.message.show{display:block}.ok{background:#dff8e8;color:#126b37}.error{background:#ffe1e5;color:#982032}.fallback{display:none;margin-top:18px;padding:20px;border-radius:20px;background:#f8fafc;color:#0f172a;text-align:center}.fallback.show{display:block}.code{font-size:38px;font-weight:950;letter-spacing:.1em;overflow-wrap:anywhere}.hint{margin:8px 0 16px;color:#64748b;font-size:13px}#reader video{border-radius:12px}
+  </style>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
-<div class="wrap"><div class="brand">LIFT × KEDR</div><h1>CHECK-IN</h1><div class="sub">Наведи камеру на QR гостя</div>
-<div class="panel"><div id="reader"></div>
-<button id="startBtn" class="start" onclick="startScanner()">СКАНИРОВАТЬ QR</button>
-<button id="stopBtn" class="start stop" style="display:none" onclick="stopScanner()">ОСТАНОВИТЬ КАМЕРУ</button>
-<div id="state" class="state"></div>
-<div class="manual"><input id="manual" placeholder="LFT-006"><button onclick="manualGo()">OK</button></div>
-<div class="note">После скана откроется карточка проверки. Там нажми «ПРОПУСТИТЬ».</div></div></div>
-<script>
-const CHECKIN_URL='https://script.google.com/macros/s/AKfycbwnTbUMeCjDMjUAU1DuPCrKBaVk4tblS7ubyammm4ycy1D2Rw7XGYbe6mqBjnJIk3IKmg/exec?page=checkin&key=32eeed8d989e4e15bf';
-let scanner=null;let busy=false;
-function setState(text){const el=document.getElementById('state');el.textContent=text;el.style.display='block';}
-function normalizeScan(text){const raw=String(text||'').trim();const codeMatch=raw.toUpperCase().match(/\bLFT-\d{3,}\b/);if(codeMatch)return codeMatch[0];return raw;}
-function goToCheckin(value){if(busy)return;const clean=normalizeScan(value);if(!clean)return;busy=true;setState('QR найден. Открываю билет…');window.location.href=CHECKIN_URL+'&scan='+encodeURIComponent(clean);}
-async function startScanner(){if(scanner)return;busy=false;document.getElementById('startBtn').style.display='none';document.getElementById('stopBtn').style.display='block';setState('Запрашиваю доступ к камере…');scanner=new Html5Qrcode('reader');try{await scanner.start({facingMode:'environment'},{fps:12,qrbox:{width:260,height:260},aspectRatio:1.0},decodedText=>goToCheckin(decodedText),()=>{});setState('Камера включена. Наведи на QR.');}catch(error){const message=error&&error.message?error.message:String(error);setState('Не удалось открыть камеру: '+message);document.getElementById('startBtn').style.display='block';document.getElementById('stopBtn').style.display='none';scanner=null;}}
-async function stopScanner(){if(!scanner)return;try{await scanner.stop();}catch(error){}try{scanner.clear();}catch(error){}scanner=null;busy=false;document.getElementById('startBtn').style.display='block';document.getElementById('stopBtn').style.display='none';setState('Камера остановлена.');}
-function manualGo(){const value=document.getElementById('manual').value.trim();if(value)goToCheckin(value);}
-</script>
+  <main class="shell">
+    <div class="eyebrow">LIFT × KEDR</div>
+    <h1>QR SCANNER</h1>
+    <section class="panel">
+      <button id="startButton" class="button" type="button">ОТКРЫТЬ КАМЕРУ</button>
+      <div id="reader" class="reader"></div>
+      <div id="message" class="message" role="status"></div>
+    </section>
+    <section id="fallback" class="fallback" aria-live="polite">
+      <div id="resultCode" class="code"></div>
+      <p class="hint">Вернись в CHECK-IN и вставь этот код вручную.</p>
+      <button id="copyButton" class="button" type="button">СКОПИРОВАТЬ</button>
+      <button id="closeButton" class="button secondary" type="button">ВЕРНУТЬСЯ В CHECK-IN</button>
+    </section>
+  </main>
+  <script>
+  (() => {
+    'use strict';
+    const RESULT_TYPE = 'LIFTOMANIA_QR_RESULT';
+    const ACK_TYPE = 'LIFTOMANIA_QR_ACK';
+    const CODE_PATTERN = /^LFT-\d{3,}$/;
+    const byId = id => document.getElementById(id);
+    const returnOrigin = parseReturnOrigin();
+    let scanner = null;
+    let deliveredCode = '';
+    let ackTimer = null;
+
+    function parseReturnOrigin() {
+      const value = new URLSearchParams(window.location.search).get('returnOrigin') || '';
+      try {
+        const parsed = new URL(value);
+        const googleHost = parsed.hostname === 'script.google.com' || parsed.hostname.endsWith('.googleusercontent.com');
+        return parsed.protocol === 'https:' && parsed.origin === value && googleHost ? parsed.origin : '';
+      } catch (error) { return ''; }
+    }
+
+    function normalizeTicketCode(value) {
+      const code = String(value || '').trim().toUpperCase();
+      return CODE_PATTERN.test(code) ? code : null;
+    }
+
+    function setMessage(type, text) {
+      const node = byId('message');
+      node.className = 'message show ' + type;
+      node.textContent = text;
+    }
+
+    async function stopScanner() {
+      if (!scanner) return;
+      const active = scanner;
+      scanner = null;
+      try { await active.stop(); } catch (error) { /* Camera may already be stopped. */ }
+      try { active.clear(); } catch (error) { /* Reader cleanup is best effort. */ }
+    }
+
+    function showFallback(code, text) {
+      deliveredCode = code;
+      byId('resultCode').textContent = code;
+      byId('fallback').classList.add('show');
+      setMessage('error', text);
+    }
+
+    function deliver(code) {
+      deliveredCode = code;
+      if (!window.opener || window.opener.closed || !returnOrigin) {
+        showFallback(code, 'Автоматический возврат недоступен.');
+        return;
+      }
+      window.opener.postMessage({type:RESULT_TYPE,ticketCode:code}, returnOrigin);
+      setMessage('ok', 'Код считан. Возвращаю в CHECK-IN…');
+      ackTimer = window.setTimeout(function () {
+        showFallback(code, 'CHECK-IN не подтвердил получение кода.');
+      }, 1800);
+    }
+
+    async function onScan(decodedText) {
+      const code = normalizeTicketCode(decodedText);
+      if (!code) {
+        setMessage('error', 'QR отклонён: ожидается только LFT-XXX.');
+        return;
+      }
+      byId('startButton').disabled = true;
+      await stopScanner();
+      deliver(code);
+    }
+
+    async function start() {
+      try {
+        if (typeof Html5Qrcode !== 'function') throw new Error('Scanner library не загрузилась');
+        byId('fallback').classList.remove('show');
+        setMessage('ok', 'Запрашиваю доступ к камере…');
+        scanner = new Html5Qrcode('reader');
+        await scanner.start(
+          {facingMode:'environment'},
+          {fps:12,qrbox:{width:250,height:250},aspectRatio:1},
+          onScan,
+          function () {}
+        );
+        byId('startButton').disabled = true;
+        setMessage('ok', 'Наведи камеру на QR билета.');
+      } catch (error) {
+        await stopScanner();
+        byId('startButton').disabled = false;
+        setMessage('error', error && error.message ? error.message : String(error));
+      }
+    }
+
+    async function copyCode() {
+      if (!deliveredCode) return;
+      try {
+        await navigator.clipboard.writeText(deliveredCode);
+        setMessage('ok', 'Код скопирован: ' + deliveredCode);
+      } catch (error) {
+        const field = document.createElement('textarea');
+        field.value = deliveredCode;
+        field.setAttribute('readonly', '');
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand('copy');
+        field.remove();
+        setMessage('ok', 'Код скопирован: ' + deliveredCode);
+      }
+    }
+
+    window.addEventListener('message', function (event) {
+      if (!returnOrigin || event.origin !== returnOrigin || event.source !== window.opener) return;
+      const data = event.data;
+      if (!data || data.type !== ACK_TYPE || normalizeTicketCode(data.ticketCode) !== deliveredCode) return;
+      if (ackTimer) window.clearTimeout(ackTimer);
+      window.close();
+    });
+    byId('startButton').addEventListener('click', start);
+    byId('copyButton').addEventListener('click', copyCode);
+    byId('closeButton').addEventListener('click', function () { window.close(); });
+  })();
+  </script>
 </body>
 </html>
