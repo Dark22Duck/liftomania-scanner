@@ -23,9 +23,8 @@
     function sanitizeError(value) {
       const source = value && value.message ? value.message : String(value || 'UNKNOWN');
       return source
+        .replace(/key(?:=|%3D)[^&\s]+/gi, 'key=[REDACTED]')
         .replace(/https?:\/\/\S+/gi, '[URL]')
-        .replace(/resume(?:=|%3D)[^&\s]+/gi, 'resume=[REDACTED]')
-        .replace(/[a-f0-9]{64}/gi, '[REDACTED]')
         .slice(0, 180);
     }
     function render(name) {
@@ -69,7 +68,7 @@
   window.LiftomaniaScannerSecurity = (() => {
     'use strict';
     const CODE_PATTERN = /^LFT-\d{3,}$/;
-    const RESUME_PATTERN = /^[a-f0-9]{64}$/i;
+    const MIN_KEY_LENGTH = 32;
     const APPS_SCRIPT_PATH = /^\/macros\/s\/[A-Za-z0-9_-]+\/(?:exec|dev)$/;
 
     function normalizeTicketCode(value) {
@@ -106,10 +105,10 @@
           if (separator < 1) return null;
           const name = decodeURIComponent(entries[index].slice(0, separator).replace(/\+/g, ' '));
           const parameterValue = decodeURIComponent(entries[index].slice(separator + 1).replace(/\+/g, ' '));
-          if ((name !== 'page' && name !== 'resume') || Object.prototype.hasOwnProperty.call(parameters, name)) return null;
+          if ((name !== 'page' && name !== 'key') || Object.prototype.hasOwnProperty.call(parameters, name)) return null;
           parameters[name] = parameterValue;
         }
-        if (parameters.page !== 'checkin' || !RESUME_PATTERN.test(parameters.resume || '')) return null;
+        if (parameters.page !== 'checkin' || String(parameters.key || '').length < MIN_KEY_LENGTH) return null;
         return parsed;
       } catch (error) { return null; }
     }
@@ -117,7 +116,7 @@
     function buildValidatedReturnUrl(parsed, ticketCode) {
       const code = normalizeTicketCode(ticketCode);
       if (!parsed || !code) return null;
-      return parsed.toString() + '&scan=' + encodeURIComponent(code);
+      return parsed.toString() + '&code=' + encodeURIComponent(code);
     }
 
     function buildReturnUrl(value, ticketCode) {
